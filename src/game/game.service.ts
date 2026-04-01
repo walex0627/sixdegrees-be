@@ -45,13 +45,13 @@ getWinMessage(steps: number): string {
 }
 
 // Roast jokes
-getRoastMessage(connections: number): string {
+getRoastMessage(steps: number): string {
   const roasts = [
-    `¿${connections} pasos? Esa cadena es más larga que los créditos de una de Marvel.`,
-    `Tardaste tanto (${connections} pasos) que a la película ya le hicieron un remake live-action.`,
-    `Tu lógica de ${connections} pasos es más confusa que el final de Inception.`,
-    `Ni con 3 horas de exposición Nolan explica por qué te tomó ${connections} pasos conectar esto.`,
-    `Esa cadena de ${connections} pasos es más larga que la fila para ver el estreno de Avengers.`,
+    `¿${steps} pasos? Esa cadena es más larga que los créditos de una de Marvel.`,
+    `Tardaste tanto (${steps} pasos) que a la película ya le hicieron un remake live-action.`,
+    `Tu lógica de ${steps} pasos es más confusa que el final de Inception.`,
+    `Ni con 3 horas de exposición Nolan explica por qué te tomó ${steps} pasos conectar esto.`,
+    `Esa cadena de ${steps} pasos es más larga que la fila para ver el estreno de Avengers.`,
   ];
   return roasts[Math.floor(Math.random() * roasts.length)];
 }
