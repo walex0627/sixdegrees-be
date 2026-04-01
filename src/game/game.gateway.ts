@@ -97,57 +97,59 @@ async handleChain(
   @MessageBody() data: { lobby: string; username: string; chain: any[] },
   @ConnectedSocket() client: Socket,
 ) {
-  // 1. Identificar al usuario
   const username = data.username || (client as any).username;
   if (!username) return { status: 'error', message: 'User not identified' };
 
-  console.log(`🎬 Procesando cadena de ${username} en lobby ${data.lobby}`);
-
-  // 2. Validar la cadena
+  // 1. Validamos la cadena completa en la DB/API
   const isChainValid = await this.gameService.validateFullChain(data.chain);
 
-  // 3. Calcular pasos (películas)
+  // 2. Contamos los pasos (Número de películas en la cadena)
+  // Si conectas Tom Cruise -> Top Gun (1 película), steps será 1.
   const steps = data.chain.filter((item) => item.type === 'movie').length;
 
-  // 4. LÓGICA DE MENSAJE DINÁMICO
-  // Si la cadena es válida, elegimos Win o Roast según los pasos.
-  // Si NO es válida, le mandamos un Roast pesado (usando un valor alto de steps)
   let resultMessage: string;
+  let finalScore = 0;
 
-  if (isChainValid) {
-    resultMessage = steps <= 6 
-      ? this.gameService.getWinMessage(steps) 
-      : this.gameService.getRoastMessage(steps);
-  } else {
-    // Aquí es donde el Director lo destruye por intentar hacer trampa o fallar la conexión
-    // Pasamos un número alto (ej: 10) para que el servicio elija un Roast de fracaso total
+  // 3. EVALUACIÓN DE LA JUGADA
+  if (!isChainValid) {
+    // Si la conexión no existe (puntos 0 y Roast de fracaso)
     resultMessage = this.gameService.getRoastMessage(10); 
+    finalScore = 0;
+  } 
+  else if (steps <= 3) {
+    // JUGADA MAESTRA: 1 a 3 películas es nivel Dios
+    resultMessage = this.gameService.getWinMessage(steps);
+    finalScore = 100 + (6 - steps) * 20; // Ej: 1 paso = 200 puntos
+  } 
+  else if (steps <= 6) {
+    // VICTORIA ESTÁNDAR: Cumplió pero pudo ser mejor
+    resultMessage = this.gameService.getWinMessage(steps);
+    finalScore = 50 + (6 - steps) * 10;
+  } 
+  else {
+    // ROAST: Más de 6 pasos (películas) ya es mucho dar vueltas
+    // Aquí es donde el Director se burla por los 10 intentos
+    resultMessage = this.gameService.getRoastMessage(steps);
+    finalScore = 10;
   }
 
-  // 5. Calcular puntaje final
-  const finalScore = isChainValid ? (steps <= 6 ? 100 + (6 - steps) * 20 : 10) : 0;
+  // 4. Guardar en Redis solo si es válida
+  if (isChainValid) {
+    await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
+  }
 
+  // 5. Enviamos el resultado
   const payload = {
     username,
     score: finalScore,
     message: resultMessage,
   };
 
-  // 6. Actualizar Redis solo si la cadena fue legítima
-  if (isChainValid && finalScore > 0) {
-    try {
-      await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
-    } catch (error) {
-      console.error("Error al guardar score en Redis:", error);
-    }
-  }
-
-  // 7. EMISIÓN ÚNICA: Notificar a toda la sala para que el App.tsx reaccione
   this.server.to(data.lobby).emit('round_result', payload);
 
-  console.log(`✅ Resultado enviado para ${username}: "${resultMessage}"`);
+  console.log(`👤 ${username} terminó con ${steps} pasos. Mensaje: ${resultMessage}`);
 
-  return { status: 'success', score: finalScore };
+  return { status: 'success', steps };
 }
   @SubscribeMessage('get_ranking')
   async handleGetRanking(@MessageBody() data: { lobby: string }) {
