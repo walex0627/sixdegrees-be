@@ -87,7 +87,6 @@ async searchEntity(query: string, type: 'person' | 'movie') {
   
   const { data } = await firstValueFrom(this.httpService.get(url));
   
-  // Limpiamos la data para que el Front no reciba basura
   return data.results.slice(0, 5).map(item => ({
     id: item.id.toString(),
     name: item.title || item.name,
