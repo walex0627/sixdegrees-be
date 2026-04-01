@@ -91,19 +91,29 @@ export class GameGateway {
     @MessageBody() data: { lobby: string; chain: { id: string; type: 'person' | 'movie' }[] },
     @ConnectedSocket() client: Socket,
   ) {
-    const username = (client as any).username;
-    if (!username) return { status: 'error', message: 'User not identified' };
+    // 1. Recuperar el username (del socket o del handshake)
+    const username = (client as any).username || client.handshake.auth?.username;
+    
+    if (!username) {
+      return { status: 'error', message: 'User not identified' };
+    }
 
+    console.log(`Validando cadena para ${username} en lobby ${data.lobby}`);
+
+    // 2. Validar la cadena con el servicio
     const isChainValid = await this.gameService.validateFullChain(data.chain);
 
     if (!isChainValid) {
-      return this.server.to(data.lobby).emit('round_result', {
+      // Notificamos a todos en el lobby que este usuario falló
+      this.server.to(data.lobby).emit('round_result', {
         username,
         score: 0,
-        message: "¡Tramposo! Esa conexión no existe.",
+        message: "¡Tramposo! Esa conexión no existe en los registros.",
       });
+      return { status: 'invalid' };
     }
 
+    // 3. Calcular puntos (basado en películas/pasos)
     const steps = data.chain.filter((item) => item.type === 'movie').length;
     let finalScore = 0;
 
@@ -113,13 +123,28 @@ export class GameGateway {
       finalScore = 10;
     }
 
-    await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
+    // 4. Actualizar ranking en Redis
+    try {
+      await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
+    } catch (error) {
+      console.error("Error actualizando Redis:", error);
+    }
 
+    // 5. Generar mensaje (Roast o Win)
+    const resultMessage = steps <= 6 
+      ? this.gameService.getWinMessage(steps) 
+      : this.gameService.getRoastMessage(steps);
+
+    // 6. EMISIÓN CRÍTICA: Notificar a toda la sala
+    // Usamos broadcast para asegurar que el mensaje baje a todos los clientes
     this.server.to(data.lobby).emit('round_result', {
       username,
       score: finalScore,
-      message: steps <= 6 ? this.gameService.getWinMessage(steps) : this.gameService.getRoastMessage(steps),
+      message: resultMessage,
     });
+
+    // 7. Respuesta de confirmación al cliente que envió (opcional)
+    return { status: 'success', score: finalScore };
   }
 
   @SubscribeMessage('get_ranking')
