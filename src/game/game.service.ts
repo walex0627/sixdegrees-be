@@ -81,4 +81,20 @@ async validateFullChain(chain: { id: string, type: 'person' | 'movie' }[]): Prom
 
   return true;
 }
+async searchEntity(query: string, type: 'person' | 'movie') {
+  const TMDB_API_KEY = process.env.TMDB_API_KEY;
+  const url = `https://api.themoviedb.org/3/search/${type}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}`;
+  
+  const { data } = await firstValueFrom(this.httpService.get(url));
+  
+  // Limpiamos la data para que el Front no reciba basura
+  return data.results.slice(0, 5).map(item => ({
+    id: item.id.toString(),
+    name: item.title || item.name,
+    type: type,
+    image: item.poster_path || item.profile_path 
+      ? `https://image.tmdb.org/t/p/w200${item.poster_path || item.profile_path}`
+      : null
+  }));
+}
 }
