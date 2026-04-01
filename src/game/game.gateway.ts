@@ -108,34 +108,29 @@ async handleChain(
   let resultMessage: string;
   let finalScore = 0;
 
-  // 3. LÓGICA DE EVALUACIÓN CORREGIDA
+  // 3. LÓGICA DE EVALUACIÓN
   if (isChainValid) {
-    if (steps === 1) {
+    // Si la cadena es válida, SIEMPRE damos Win Message si son pocos pasos
+    if (steps <= 6) {
       resultMessage = this.gameService.getWinMessage(steps);
-      finalScore = 250; 
-    } else if (steps <= 3) {
-      resultMessage = this.gameService.getWinMessage(steps);
-      finalScore = 150;
-    } else if (steps <= 6) {
-      resultMessage = this.gameService.getWinMessage(steps);
-      finalScore = 100;
+      // Puntuación Pro: 1 paso = 250, 2-3 = 150, 4-6 = 100
+      finalScore = steps === 1 ? 250 : (steps <= 3 ? 150 : 100);
     } else {
       resultMessage = this.gameService.getRoastMessage(steps);
       finalScore = 10;
     }
+    
+    // 4. Guardar en Redis SOLO si es válida
+    await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
+    
   } else {
-    // SI LA VALIDACIÓN FALLA (Pero no queremos el mensaje quemado de "Tramposo")
-    // Le mandamos un Roast del servicio para que el Director lo vacile con clase
-    resultMessage = this.gameService.getRoastMessage(steps || 10);
+    // SI LA VALIDACIÓN FALLA: 
+    // Mandamos un mensaje especial del Director para errores de conexión
+    resultMessage = `¡Corte! El Director dice que ${data.chain[0].name} no estuvo en esa producción. Revisa tus fuentes.`;
     finalScore = 0;
   }
 
-  // 4. Guardar en Redis solo si es válida
-  if (isChainValid) {
-    await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
-  }
-
-  // 5. Emitir el resultado a la sala
+  // 5. Emitir el resultado
   this.server.to(data.lobby).emit('round_result', {
     username,
     score: finalScore,

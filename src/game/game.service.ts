@@ -58,39 +58,30 @@ getRoastMessage(steps: number): string {
 
 //Validate if the movie is valid
 async validateFullChain(chain: { id: string, type: 'person' | 'movie' }[]): Promise<boolean> {
-  if (chain.length < 3) return false;
+  // Una cadena mínima válida es: Actor -> Película -> Actor (3 nodos)
+  // Pero si el usuario conecta Actor -> Película (2 nodos) y esa película es el objetivo, también es válido.
+  if (chain.length < 2) return false; 
 
   for (let i = 0; i < chain.length - 1; i++) {
     const current = chain[i];
     const next = chain[i + 1];
+
+    // No pueden haber dos tipos seguidos (Actor -> Actor es error)
     if (current.type === next.type) return false; 
 
+    // Si es Persona -> Película
     if (current.type === 'person' && next.type === 'movie') {
-      const isValid = await this.verifyCredit(current.id, next.id);
+      const isValid = await this.verifyCredit(current.id.toString(), next.id.toString());
       if (!isValid) return false;
     }
     
+    // Si es Película -> Persona
     if (current.type === 'movie' && next.type === 'person') {
-      const isValid = await this.verifyCredit(next.id, current.id);
+      const isValid = await this.verifyCredit(next.id.toString(), current.id.toString());
       if (!isValid) return false;
     }
   }
 
   return true;
-}
-async searchEntity(query: string, type: 'person' | 'movie') {
-  const TMDB_API_KEY = process.env.TMDB_API_KEY;
-  const url = `https://api.themoviedb.org/3/search/${type}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}`;
-  
-  const { data } = await firstValueFrom(this.httpService.get(url));
-  
-  return data.results.slice(0, 5).map(item => ({
-    id: item.id.toString(),
-    name: item.title || item.name,
-    type: type,
-    image: item.poster_path || item.profile_path 
-      ? `https://image.tmdb.org/t/p/w200${item.poster_path || item.profile_path}`
-      : null
-  }));
 }
 }
