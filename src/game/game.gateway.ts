@@ -8,7 +8,9 @@ export class GameGateway {
   constructor(private readonly gameService: GameService) {}
 
   @WebSocketServer() server:Server;
-  private redis = new Redis(process.env.REDIS_URL || 'redis://default:xzdDpLxGBOCoatlEIOjCNtLZRZcYedzp@redis.railway.internal:6379',{
+
+  //Redis connection
+  private redis = new Redis(process.env.REDIS_PUBLIC_URL || process.env.REDIS_URL || 'redis://default:xzdDpLxGBOCoatlEIOjCNtLZRZcYedzp@hopper.proxy.rlwy.net:10051',{
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     connectTimeout: 10000
