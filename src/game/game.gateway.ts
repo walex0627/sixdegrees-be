@@ -98,51 +98,53 @@ async handleChain(
   @ConnectedSocket() client: Socket,
 ) {
   const username = data.username || (client as any).username;
-  if (!username) return { status: 'error', message: 'User not identified' };
-
+  
+  // 1. Validar la cadena
   const isChainValid = await this.gameService.validateFullChain(data.chain);
+
+  // 2. Contar pasos (películas)
   const steps = data.chain.filter((item) => item.type === 'movie').length;
 
   let resultMessage: string;
   let finalScore = 0;
 
-  if (!isChainValid) {
-    resultMessage = "¡El Director te pilló! Esa conexión es falsa, inténtalo sin trampas."; 
+  // 3. LÓGICA DE EVALUACIÓN CORREGIDA
+  if (isChainValid) {
+    if (steps === 1) {
+      resultMessage = this.gameService.getWinMessage(steps);
+      finalScore = 250; 
+    } else if (steps <= 3) {
+      resultMessage = this.gameService.getWinMessage(steps);
+      finalScore = 150;
+    } else if (steps <= 6) {
+      resultMessage = this.gameService.getWinMessage(steps);
+      finalScore = 100;
+    } else {
+      resultMessage = this.gameService.getRoastMessage(steps);
+      finalScore = 10;
+    }
+  } else {
+    // SI LA VALIDACIÓN FALLA (Pero no queremos el mensaje quemado de "Tramposo")
+    // Le mandamos un Roast del servicio para que el Director lo vacile con clase
+    resultMessage = this.gameService.getRoastMessage(steps || 10);
     finalScore = 0;
-  } 
-  else if (steps === 1) {
-    // 🏆 LA JUGADA PERFECTA (One-shot)
-    resultMessage = this.gameService.getWinMessage(steps);
-    finalScore = 250; // Bonus por perfección
-  }
-  else if (steps <= 3) {
-    // 🔥 NIVEL DIOS (2-3 pasos)
-    resultMessage = this.gameService.getWinMessage(steps);
-    finalScore = 150 + (3 - steps) * 20;
-  } 
-  else if (steps <= 6) {
-    // ✅ VICTORIA NORMAL (4-6 pasos)
-    resultMessage = this.gameService.getWinMessage(steps);
-    finalScore = 70 + (6 - steps) * 10;
-  } 
-  else {
-    // 🤡 ROAST (7+ pasos)
-    resultMessage = this.gameService.getRoastMessage(steps);
-    finalScore = 10;
   }
 
+  // 4. Guardar en Redis solo si es válida
   if (isChainValid) {
     await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
   }
 
+  // 5. Emitir el resultado a la sala
   this.server.to(data.lobby).emit('round_result', {
     username,
     score: finalScore,
     message: resultMessage,
   });
 
-  return { status: 'success', steps };
+  return { status: 'success' };
 }
+
   @SubscribeMessage('get_ranking')
   async handleGetRanking(@MessageBody() data: { lobby: string }) {
     const scores = await this.redis.zrevrange(`lobby:${data.lobby}:scores`, 0, -1, 'WITHSCORES');
