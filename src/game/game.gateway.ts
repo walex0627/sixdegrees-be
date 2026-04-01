@@ -98,11 +98,11 @@ async handleChain(
   @ConnectedSocket() client: Socket,
 ) {
   const username = data.username || (client as any).username;
-  console.log(`Recibido submit_chain de ${username} para lobby ${data.lobby}`);
-
   const isChainValid = await this.gameService.validateFullChain(data.chain);
 
   const steps = data.chain.filter((item) => item.type === 'movie').length;
+  
+  // Aquí es donde el Backend decide el mensaje
   const resultMessage = isChainValid 
     ? (steps <= 6 ? this.gameService.getWinMessage(steps) : this.gameService.getRoastMessage(steps))
     : "¡Tramposo! Esa conexión no existe.";
@@ -113,16 +113,11 @@ async handleChain(
     message: resultMessage,
   };
 
-  // 1. Emitir a toda la sala (para el ranking global)
+  // EMITIMOS SOLO UNA VEZ A LA SALA
   this.server.to(data.lobby).emit('round_result', payload);
-
-  // 2. EMISIÓN DE RESPALDO: Responder directamente al cliente que envió
-  // Esto asegura que aunque falle el canal de la sala, TU pantalla cambie.
-  client.emit('round_result', payload);
 
   return { status: 'success' };
 }
-
   @SubscribeMessage('get_ranking')
   async handleGetRanking(@MessageBody() data: { lobby: string }) {
     const scores = await this.redis.zrevrange(`lobby:${data.lobby}:scores`, 0, -1, 'WITHSCORES');
