@@ -3,7 +3,10 @@ import { GameService } from './game.service';
 import { Server, Socket } from 'socket.io';
 import Redis from 'ioredis';
 
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({
+  cors: { origin: '*' },
+  path: '/api/socket.io' // Esto debe coincidir con lo que busque el front
+})
 export class GameGateway {
   constructor(private readonly gameService: GameService) {}
 
