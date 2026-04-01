@@ -8,7 +8,7 @@ export class GameGateway {
   constructor(private readonly gameService: GameService) {}
 
   @WebSocketServer() server:Server;
-  private redis = new Redis()
+  private redis = new Redis(process.env.REDIS_URL || 'redis://default:xzdDpLxGBOCoatlEIOjCNtLZRZcYedzp@redis.railway.internal:6379')
 
   @SubscribeMessage('create_lobby')
   async handleCreateLobbby(@ConnectedSocket() cliente:Socket){
