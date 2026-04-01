@@ -24,13 +24,12 @@ export class GameGateway {
 
   @SubscribeMessage('create_lobby')
   async handleCreateLobbby(
-    @ConnectedSocket() cliente: Socket,
-    @MessageBody() data: { startNode: any, targetNode: any }
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { startNode: any, targetNode: any, username: string }
   ) {
-    // Generamos código alfanumérico de 6 dígitos
     const lobbyCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    // Guardamos la configuración inicial
+    // Guardamos la configuración y el creador
     await this.redis.hset(`lobby:${lobbyCode}`, {
       status: 'waiting',
       startNode: JSON.stringify(data.startNode),
@@ -39,9 +38,16 @@ export class GameGateway {
     
     await this.redis.expire(`lobby:${lobbyCode}`, 1800); 
 
-    cliente.join(lobbyCode);
+    // Identificamos al creador en el socket
+    (client as any).username = data.username;
+    client.join(lobbyCode);
+
+    // Inicializamos al creador en las listas de Redis
+    await this.redis.sadd(`lobby:${lobbyCode}:players`, data.username);
+    await this.redis.zadd(`lobby:${lobbyCode}:scores`, 0, data.username);
+
+    console.log(`Lobby creado: ${lobbyCode} por ${data.username}`);
     
-    // IMPORTANTE: Retornamos el objeto tal cual lo espera el handleJoin de App.tsx
     return { lobbyCode };
   }
 
@@ -52,7 +58,6 @@ export class GameGateway {
   ) {
     const lobbyData = await this.redis.hgetall(`lobby:${data.code}`);
     
-    // Verificamos si existe el status para confirmar que el lobby es válido
     if (lobbyData && lobbyData.status) {
       (client as any).username = data.username;
       client.join(data.code);
@@ -62,28 +67,29 @@ export class GameGateway {
 
       const playerCount = await this.redis.scard(`lobby:${data.code}:players`);
 
-      // Notificamos a los que ya estaban
+      // Notificamos a la sala
       this.server.to(data.code).emit('player_joined', {
         username: data.username,
         players: playerCount
       });
 
-      // Retornamos los nodos para que el que se une vea el desafío
+      console.log(`Jugador ${data.username} unido al lobby ${data.code}`);
+
       return { 
         status: 'success', 
         startNode: JSON.parse(lobbyData.startNode), 
         targetNode: JSON.parse(lobbyData.targetNode) 
       };
     } else {
-      return { status: 'error', message: 'Lobby no encontrado o expirado' };
+      return { status: 'error', message: 'Lobby no encontrado' };
     }
   }
 
   @SubscribeMessage('start_game')
   async handleStartGame(@MessageBody() data: { lobby: string }) {
     await this.redis.hset(`lobby:${data.lobby}`, 'status', 'playing');
-    // Avisamos a todos que la pantalla debe cambiar
     this.server.to(data.lobby).emit('game_started');
+    console.log(`Juego iniciado en lobby: ${data.lobby}`);
   }
 
   @SubscribeMessage('submit_chain')
@@ -91,60 +97,44 @@ export class GameGateway {
     @MessageBody() data: { lobby: string; chain: { id: string; type: 'person' | 'movie' }[] },
     @ConnectedSocket() client: Socket,
   ) {
-    // 1. Recuperar el username (del socket o del handshake)
+    // Intentar sacar el username de varias fuentes para que no sea null
     const username = (client as any).username || client.handshake.auth?.username;
     
     if (!username) {
+      console.error("Error: Intento de submit sin username identificado");
       return { status: 'error', message: 'User not identified' };
     }
 
-    console.log(`Validando cadena para ${username} en lobby ${data.lobby}`);
-
-    // 2. Validar la cadena con el servicio
     const isChainValid = await this.gameService.validateFullChain(data.chain);
 
     if (!isChainValid) {
-      // Notificamos a todos en el lobby que este usuario falló
       this.server.to(data.lobby).emit('round_result', {
         username,
         score: 0,
-        message: "¡Tramposo! Esa conexión no existe en los registros.",
+        message: "¡Tramposo! Esa conexión no existe.",
       });
       return { status: 'invalid' };
     }
 
-    // 3. Calcular puntos (basado en películas/pasos)
     const steps = data.chain.filter((item) => item.type === 'movie').length;
-    let finalScore = 0;
+    let finalScore = (steps <= 6) ? (100 + (6 - steps) * 20) : 10;
 
-    if (steps <= 6) {
-      finalScore = 100 + (6 - steps) * 20;
-    } else {
-      finalScore = 10;
-    }
+    await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
 
-    // 4. Actualizar ranking en Redis
-    try {
-      await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
-    } catch (error) {
-      console.error("Error actualizando Redis:", error);
-    }
-
-    // 5. Generar mensaje (Roast o Win)
     const resultMessage = steps <= 6 
       ? this.gameService.getWinMessage(steps) 
       : this.gameService.getRoastMessage(steps);
 
-    // 6. EMISIÓN CRÍTICA: Notificar a toda la sala
-    // Usamos broadcast para asegurar que el mensaje baje a todos los clientes
+    console.log(`Resultado emitido para ${username} en lobby ${data.lobby}: ${resultMessage}`);
+
+    // EMISIÓN A LA SALA
     this.server.to(data.lobby).emit('round_result', {
       username,
       score: finalScore,
       message: resultMessage,
     });
 
-    // 7. Respuesta de confirmación al cliente que envió (opcional)
-    return { status: 'success', score: finalScore };
+    return { status: 'success' };
   }
 
   @SubscribeMessage('get_ranking')
