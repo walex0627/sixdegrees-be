@@ -92,7 +92,7 @@ export class GameGateway {
     console.log(`Juego iniciado en lobby: ${data.lobby}`);
   }
 
- @SubscribeMessage('submit_chain')
+  @SubscribeMessage('submit_chain')
 async handleChain(
   @MessageBody() data: { lobby: string; username: string; chain: any[] },
   @ConnectedSocket() client: Socket,
@@ -100,54 +100,46 @@ async handleChain(
   const username = data.username || (client as any).username;
   if (!username) return { status: 'error', message: 'User not identified' };
 
-  // 1. Validamos la cadena completa en la DB/API
   const isChainValid = await this.gameService.validateFullChain(data.chain);
-
-  // 2. Contamos los pasos (Número de películas en la cadena)
-  // Si conectas Tom Cruise -> Top Gun (1 película), steps será 1.
   const steps = data.chain.filter((item) => item.type === 'movie').length;
 
   let resultMessage: string;
   let finalScore = 0;
 
-  // 3. EVALUACIÓN DE LA JUGADA
   if (!isChainValid) {
-    // Si la conexión no existe (puntos 0 y Roast de fracaso)
-    resultMessage = this.gameService.getRoastMessage(10); 
+    resultMessage = "¡El Director te pilló! Esa conexión es falsa, inténtalo sin trampas."; 
     finalScore = 0;
   } 
-  else if (steps <= 3) {
-    // JUGADA MAESTRA: 1 a 3 películas es nivel Dios
+  else if (steps === 1) {
+    // 🏆 LA JUGADA PERFECTA (One-shot)
     resultMessage = this.gameService.getWinMessage(steps);
-    finalScore = 100 + (6 - steps) * 20; // Ej: 1 paso = 200 puntos
+    finalScore = 250; // Bonus por perfección
+  }
+  else if (steps <= 3) {
+    // 🔥 NIVEL DIOS (2-3 pasos)
+    resultMessage = this.gameService.getWinMessage(steps);
+    finalScore = 150 + (3 - steps) * 20;
   } 
   else if (steps <= 6) {
-    // VICTORIA ESTÁNDAR: Cumplió pero pudo ser mejor
+    // ✅ VICTORIA NORMAL (4-6 pasos)
     resultMessage = this.gameService.getWinMessage(steps);
-    finalScore = 50 + (6 - steps) * 10;
+    finalScore = 70 + (6 - steps) * 10;
   } 
   else {
-    // ROAST: Más de 6 pasos (películas) ya es mucho dar vueltas
-    // Aquí es donde el Director se burla por los 10 intentos
+    // 🤡 ROAST (7+ pasos)
     resultMessage = this.gameService.getRoastMessage(steps);
     finalScore = 10;
   }
 
-  // 4. Guardar en Redis solo si es válida
   if (isChainValid) {
     await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
   }
 
-  // 5. Enviamos el resultado
-  const payload = {
+  this.server.to(data.lobby).emit('round_result', {
     username,
     score: finalScore,
     message: resultMessage,
-  };
-
-  this.server.to(data.lobby).emit('round_result', payload);
-
-  console.log(`👤 ${username} terminó con ${steps} pasos. Mensaje: ${resultMessage}`);
+  });
 
   return { status: 'success', steps };
 }

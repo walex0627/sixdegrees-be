@@ -30,33 +30,30 @@ export class GameService {
     
   }
 
-  //Roast jokes
-  getRoastMessage(connections: number): string {
-    const roasts = [
-      `¿${connections} pasos? Hasta el Snyder Cut es más corto que tu lógica.`,
-      `Tardaste tanto que a la película ya le hicieron un remake live-action de Disney.`,
-      `Tu conocimiento de cine es tan pobre que crees que 'Rápido y Furioso' merece un Oscar.`,
-      `Ni con 3 horas de exposición Nolan explica por qué te tomó tanto conectar esto.`,
-      `Esa cadena es más larga que la lista de ex-novias de Taylor Swift.`,
-    ];
-    return roasts[Math.floor(Math.random() * roasts.length)];
-  }
-
-  //Win message
-  getWinMessage(steps: number): string {
+// Win message
+getWinMessage(steps: number): string {
   const winMessages = [
-    `¡CINETO! 🎥 Coronaste en ${steps} pasos, estás pasado de niveles.`,
-    `¡LA CABRAAAAA! 🐐 Metiste un combo que ni Westcol en un buen día.`,
-    `¿${steps} pasos? Simplemente un diferente, un iluminado, un distinto.`,
-    `¡QUÉ NIVEL DE IQ! Estás desperdiciado aquí, deberías ser el director de Marvel.`,
-    `¡WEEEEST! Metiste la presión, eso fue cine puro. 🍿`,
-    `Ni el algoritmo de YouTube tiene tanta precisión como tú. ¡Coronadísimo!`,
-    `¡Puro Prime! Estás en tu mejor momento, no dejes que nadie te diga lo contrario.`,
-    `Eso fue un 'clutch' histórico. Estás bendecido por el dios del streaming.`,
-    `¡BOOM! Menos de 6 pasos... eres literalmente el protagonista de la película.`,
-    `¡ESOOOO! Te ganaste el respeto de la comunidad, mi king.`
+    `¡CINETO! 🎥 Coronaste en solo ${steps} ${steps === 1 ? 'paso' : 'pasos'}, estás en otro nivel.`,
+    `¡LA CABRAAAAA! 🐐 ${steps === 1 ? '¡Un solo movimiento!' : `En ${steps} pasos`} metiste un combo mortal.`,
+    `¿${steps} ${steps === 1 ? 'pasito' : 'pasos'}? Simplemente un iluminado, un distinto.`,
+    `¡QUÉ NIVEL DE IQ! Con ${steps} pasos ya podrías dirigir la fase 6 de Marvel.`,
+    `¡WEEEEST! Metiste la presión en ${steps} pasos, eso fue cine puro. 🍿`,
+    `¡Puro Prime! ${steps} pasos bastaron para demostrar quién manda aquí.`,
+    `¡BOOM! Solo ${steps} pasos... eres literalmente el protagonista de la película.`,
   ];
   return winMessages[Math.floor(Math.random() * winMessages.length)];
+}
+
+// Roast jokes
+getRoastMessage(connections: number): string {
+  const roasts = [
+    `¿${connections} pasos? Esa cadena es más larga que los créditos de una de Marvel.`,
+    `Tardaste tanto (${connections} pasos) que a la película ya le hicieron un remake live-action.`,
+    `Tu lógica de ${connections} pasos es más confusa que el final de Inception.`,
+    `Ni con 3 horas de exposición Nolan explica por qué te tomó ${connections} pasos conectar esto.`,
+    `Esa cadena de ${connections} pasos es más larga que la fila para ver el estreno de Avengers.`,
+  ];
+  return roasts[Math.floor(Math.random() * roasts.length)];
 }
 
 //Validate if the movie is valid
