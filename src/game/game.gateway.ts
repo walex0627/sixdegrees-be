@@ -97,26 +97,57 @@ async handleChain(
   @MessageBody() data: { lobby: string; username: string; chain: any[] },
   @ConnectedSocket() client: Socket,
 ) {
+  // 1. Identificar al usuario
   const username = data.username || (client as any).username;
+  if (!username) return { status: 'error', message: 'User not identified' };
+
+  console.log(`🎬 Procesando cadena de ${username} en lobby ${data.lobby}`);
+
+  // 2. Validar la cadena
   const isChainValid = await this.gameService.validateFullChain(data.chain);
 
+  // 3. Calcular pasos (películas)
   const steps = data.chain.filter((item) => item.type === 'movie').length;
-  
-  // Aquí es donde el Backend decide el mensaje
-  const resultMessage = isChainValid 
-    ? (steps <= 6 ? this.gameService.getWinMessage(steps) : this.gameService.getRoastMessage(steps))
-    : "¡Tramposo! Esa conexión no existe.";
+
+  // 4. LÓGICA DE MENSAJE DINÁMICO
+  // Si la cadena es válida, elegimos Win o Roast según los pasos.
+  // Si NO es válida, le mandamos un Roast pesado (usando un valor alto de steps)
+  let resultMessage: string;
+
+  if (isChainValid) {
+    resultMessage = steps <= 6 
+      ? this.gameService.getWinMessage(steps) 
+      : this.gameService.getRoastMessage(steps);
+  } else {
+    // Aquí es donde el Director lo destruye por intentar hacer trampa o fallar la conexión
+    // Pasamos un número alto (ej: 10) para que el servicio elija un Roast de fracaso total
+    resultMessage = this.gameService.getRoastMessage(10); 
+  }
+
+  // 5. Calcular puntaje final
+  const finalScore = isChainValid ? (steps <= 6 ? 100 + (6 - steps) * 20 : 10) : 0;
 
   const payload = {
     username,
-    score: isChainValid ? (steps <= 6 ? 100 : 10) : 0,
+    score: finalScore,
     message: resultMessage,
   };
 
-  // EMITIMOS SOLO UNA VEZ A LA SALA
+  // 6. Actualizar Redis solo si la cadena fue legítima
+  if (isChainValid && finalScore > 0) {
+    try {
+      await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
+    } catch (error) {
+      console.error("Error al guardar score en Redis:", error);
+    }
+  }
+
+  // 7. EMISIÓN ÚNICA: Notificar a toda la sala para que el App.tsx reaccione
   this.server.to(data.lobby).emit('round_result', payload);
 
-  return { status: 'success' };
+  console.log(`✅ Resultado enviado para ${username}: "${resultMessage}"`);
+
+  return { status: 'success', score: finalScore };
 }
   @SubscribeMessage('get_ranking')
   async handleGetRanking(@MessageBody() data: { lobby: string }) {
