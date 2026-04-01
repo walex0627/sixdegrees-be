@@ -92,50 +92,36 @@ export class GameGateway {
     console.log(`Juego iniciado en lobby: ${data.lobby}`);
   }
 
-  @SubscribeMessage('submit_chain')
-  async handleChain(
-    @MessageBody() data: { lobby: string; chain: { id: string; type: 'person' | 'movie' }[] },
-    @ConnectedSocket() client: Socket,
-  ) {
-    // Intentar sacar el username de varias fuentes para que no sea null
-    const username = (client as any).username || client.handshake.auth?.username;
-    
-    if (!username) {
-      console.error("Error: Intento de submit sin username identificado");
-      return { status: 'error', message: 'User not identified' };
-    }
+ @SubscribeMessage('submit_chain')
+async handleChain(
+  @MessageBody() data: { lobby: string; username: string; chain: any[] },
+  @ConnectedSocket() client: Socket,
+) {
+  const username = data.username || (client as any).username;
+  console.log(`Recibido submit_chain de ${username} para lobby ${data.lobby}`);
 
-    const isChainValid = await this.gameService.validateFullChain(data.chain);
+  const isChainValid = await this.gameService.validateFullChain(data.chain);
 
-    if (!isChainValid) {
-      this.server.to(data.lobby).emit('round_result', {
-        username,
-        score: 0,
-        message: "¡Tramposo! Esa conexión no existe.",
-      });
-      return { status: 'invalid' };
-    }
+  const steps = data.chain.filter((item) => item.type === 'movie').length;
+  const resultMessage = isChainValid 
+    ? (steps <= 6 ? this.gameService.getWinMessage(steps) : this.gameService.getRoastMessage(steps))
+    : "¡Tramposo! Esa conexión no existe.";
 
-    const steps = data.chain.filter((item) => item.type === 'movie').length;
-    let finalScore = (steps <= 6) ? (100 + (6 - steps) * 20) : 10;
+  const payload = {
+    username,
+    score: isChainValid ? (steps <= 6 ? 100 : 10) : 0,
+    message: resultMessage,
+  };
 
-    await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
+  // 1. Emitir a toda la sala (para el ranking global)
+  this.server.to(data.lobby).emit('round_result', payload);
 
-    const resultMessage = steps <= 6 
-      ? this.gameService.getWinMessage(steps) 
-      : this.gameService.getRoastMessage(steps);
+  // 2. EMISIÓN DE RESPALDO: Responder directamente al cliente que envió
+  // Esto asegura que aunque falle el canal de la sala, TU pantalla cambie.
+  client.emit('round_result', payload);
 
-    console.log(`Resultado emitido para ${username} en lobby ${data.lobby}: ${resultMessage}`);
-
-    // EMISIÓN A LA SALA
-    this.server.to(data.lobby).emit('round_result', {
-      username,
-      score: finalScore,
-      message: resultMessage,
-    });
-
-    return { status: 'success' };
-  }
+  return { status: 'success' };
+}
 
   @SubscribeMessage('get_ranking')
   async handleGetRanking(@MessageBody() data: { lobby: string }) {
