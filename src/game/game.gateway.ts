@@ -149,4 +149,25 @@ async handleChain(
     }
     return formatted;
   }
+
+  @SubscribeMessage('update_mission')
+  async handleUpdateMission(
+    @MessageBody() data: { lobby_code: string, startNode: any, targetNode: any }
+  ) {
+    // 1. Restaurar estatus de la sala a "waiting" (no jugando) y guardar los nuevos nodos
+    await this.redis.hset(`lobby:${data.lobby_code}`, {
+      status: 'waiting',
+      startNode: JSON.stringify(data.startNode),
+      targetNode: JSON.stringify(data.targetNode)
+    });
+
+    // 2. Emitir el nuevo evento a todos los clientes de esa sala
+    this.server.to(data.lobby_code).emit('mission_updated', {
+      startNode: data.startNode,
+      targetNode: data.targetNode
+    });
+
+    console.log(`Misión actualizada en lobby: ${data.lobby_code}`);
+    return { status: 'success' };
+  }
 }
