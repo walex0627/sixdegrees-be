@@ -65,12 +65,16 @@ export class GameGateway {
       await this.redis.sadd(`lobby:${data.code}:players`, data.username);
       await this.redis.zadd(`lobby:${data.code}:scores`, 0, data.username);
 
-      const playerCount = await this.redis.scard(`lobby:${data.code}:players`);
+      // Obtener arreglo de jugadores actualizado
+      const scores = await this.redis.zrevrange(`lobby:${data.code}:scores`, 0, -1, 'WITHSCORES');
+      const players: { username: string; score: number }[] = [];
+      for (let i = 0; i < scores.length; i += 2) {
+        players.push({ username: scores[i], score: parseInt(scores[i+1]) });
+      }
 
-      // Notificamos a la sala
+      // Notificamos a toda la sala de la llegada del nuevo jugador con el array
       this.server.to(data.code).emit('player_joined', {
-        username: data.username,
-        players: playerCount
+        players
       });
 
       console.log(`Jugador ${data.username} unido al lobby ${data.code}`);
@@ -78,7 +82,8 @@ export class GameGateway {
       return { 
         status: 'success', 
         startNode: JSON.parse(lobbyData.startNode), 
-        targetNode: JSON.parse(lobbyData.targetNode) 
+        targetNode: JSON.parse(lobbyData.targetNode),
+        players
       };
     } else {
       return { status: 'error', message: 'Lobby no encontrado' };
