@@ -33,7 +33,8 @@ export class GameGateway {
     await this.redis.hset(`lobby:${lobbyCode}`, {
       status: 'waiting',
       startNode: JSON.stringify(data.startNode),
-      targetNode: JSON.stringify(data.targetNode)
+      targetNode: JSON.stringify(data.targetNode),
+      hostUsername: data.username
     });
     
     await this.redis.expire(`lobby:${lobbyCode}`, 1800); 
@@ -74,15 +75,18 @@ export class GameGateway {
 
       // Notificamos a toda la sala de la llegada del nuevo jugador con el array
       this.server.to(data.code).emit('player_joined', {
-        players
+        players,
+        hostUsername: lobbyData.hostUsername
       });
 
       console.log(`Jugador ${data.username} unido al lobby ${data.code}`);
 
       return { 
         status: 'success', 
+        lobbyCode: data.code,
         startNode: JSON.parse(lobbyData.startNode), 
         targetNode: JSON.parse(lobbyData.targetNode),
+        hostUsername: lobbyData.hostUsername,
         players
       };
     } else {
