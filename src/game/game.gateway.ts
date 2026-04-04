@@ -130,11 +130,18 @@ async handleChain(
     finalScore = 0;
   }
 
-  // 5. Emitir el resultado
+  // 5. Obtener ranking actualizado y emitir el resultado
+  const scores = await this.redis.zrevrange(`lobby:${data.lobby}:scores`, 0, -1, 'WITHSCORES');
+  const players: { username: string; score: number }[] = [];
+  for (let i = 0; i < scores.length; i += 2) {
+    players.push({ username: scores[i], score: parseInt(scores[i+1]) });
+  }
+
   this.server.to(data.lobby).emit('round_result', {
     username,
     score: finalScore,
     message: resultMessage,
+    players,
   });
 
   return { status: 'success' };
