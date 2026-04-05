@@ -97,7 +97,19 @@ export class GameGateway {
   @SubscribeMessage('start_game')
   async handleStartGame(@MessageBody() data: { lobby: string }) {
     await this.redis.hset(`lobby:${data.lobby}`, 'status', 'playing');
-    this.server.to(data.lobby).emit('game_started');
+
+    // Obtener el arreglo de jugadores y el host para el parche de seguridad del frontend
+    const lobbyData = await this.redis.hgetall(`lobby:${data.lobby}`);
+    const scores = await this.redis.zrevrange(`lobby:${data.lobby}:scores`, 0, -1, 'WITHSCORES');
+    const players: { username: string; score: number }[] = [];
+    for (let i = 0; i < scores.length; i += 2) {
+      players.push({ username: scores[i], score: parseInt(scores[i+1]) });
+    }
+
+    this.server.to(data.lobby).emit('game_started', {
+      players,
+      hostUsername: lobbyData.hostUsername
+    });
     console.log(`Juego iniciado en lobby: ${data.lobby}`);
   }
 
