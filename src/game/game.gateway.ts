@@ -114,59 +114,70 @@ export class GameGateway {
   }
 
   @SubscribeMessage('submit_chain')
-async handleChain(
-  @MessageBody() data: { lobby: string; username: string; chain: any[] },
-  @ConnectedSocket() client: Socket,
-) {
-  const username = data.username || (client as any).username;
-  
-  // 1. Validar la cadena
-  const isChainValid = await this.gameService.validateFullChain(data.chain);
+  async handleChain(
+    @MessageBody() data: { lobby: string; username: string; chain: any[] },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const username = data.username || (client as any).username;
 
-  // 2. Contar pasos (películas)
-  const steps = data.chain.filter((item) => item.type === 'movie').length;
+    try {
+      // 1. Validar la cadena
+      const isChainValid = await this.gameService.validateFullChain(data.chain);
 
-  let resultMessage: string;
-  let finalScore = 0;
+      // 2. Contar pasos (películas)
+      const steps = data.chain.filter((item) => item.type === 'movie').length;
 
-  // 3. LÓGICA DE EVALUACIÓN
-  if (isChainValid) {
-    // Si la cadena es válida, SIEMPRE damos Win Message si son pocos pasos
-    if (steps <= 6) {
-      resultMessage = this.gameService.getWinMessage(steps);
-      // Puntuación Pro: 1 paso = 250, 2-3 = 150, 4-6 = 100
-      finalScore = steps === 1 ? 250 : (steps <= 3 ? 150 : 100);
-    } else {
-      resultMessage = this.gameService.getRoastMessage(steps);
-      finalScore = 10;
+      let resultMessage: string;
+      let finalScore = 0;
+
+      // 3. LÓGICA DE EVALUACIÓN
+      if (isChainValid) {
+        if (steps <= 6) {
+          resultMessage = this.gameService.getWinMessage(steps);
+          // Puntuación Pro: 1 paso = 250, 2-3 = 150, 4-6 = 100
+          finalScore = steps === 1 ? 250 : (steps <= 3 ? 150 : 100);
+        } else {
+          resultMessage = this.gameService.getRoastMessage(steps);
+          finalScore = 10;
+        }
+
+        // 4. Guardar en Redis SOLO si es válida
+        await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
+
+      } else {
+        resultMessage = `¡Corte! El Director dice que ${data.chain[0]?.name || 'ese elemento'} no estuvo en esa producción. Revisa tus fuentes.`;
+        finalScore = 0;
+      }
+
+      // 5. Obtener ranking actualizado y emitir el resultado
+      const scores = await this.redis.zrevrange(`lobby:${data.lobby}:scores`, 0, -1, 'WITHSCORES');
+      const players: { username: string; score: number }[] = [];
+      for (let i = 0; i < scores.length; i += 2) {
+        players.push({ username: scores[i], score: parseInt(scores[i+1]) });
+      }
+
+      this.server.to(data.lobby).emit('round_result', {
+        username,
+        score: finalScore,
+        message: resultMessage,
+        players,
+      });
+
+    } catch (error) {
+      console.error(`[submit_chain] Error inesperado para ${username}:`, error.message);
+
+      // SIEMPRE emitimos round_result aunque haya un error, para descongelar al cliente
+      this.server.to(data.lobby).emit('round_result', {
+        username,
+        score: 0,
+        message: `¡Corte técnico! Hubo un problema del servidor al validar tu cadena. Intenta con una cadena más corta.`,
+        players: [],
+        error: true,
+      });
     }
-    
-    // 4. Guardar en Redis SOLO si es válida
-    await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
-    
-  } else {
-    // SI LA VALIDACIÓN FALLA: 
-    // Mandamos un mensaje especial del Director para errores de conexión
-    resultMessage = `¡Corte! El Director dice que ${data.chain[0].name} no estuvo en esa producción. Revisa tus fuentes.`;
-    finalScore = 0;
+
+    return { status: 'success' };
   }
-
-  // 5. Obtener ranking actualizado y emitir el resultado
-  const scores = await this.redis.zrevrange(`lobby:${data.lobby}:scores`, 0, -1, 'WITHSCORES');
-  const players: { username: string; score: number }[] = [];
-  for (let i = 0; i < scores.length; i += 2) {
-    players.push({ username: scores[i], score: parseInt(scores[i+1]) });
-  }
-
-  this.server.to(data.lobby).emit('round_result', {
-    username,
-    score: finalScore,
-    message: resultMessage,
-    players,
-  });
-
-  return { status: 'success' };
-}
 
   @SubscribeMessage('get_ranking')
   async handleGetRanking(@MessageBody() data: { lobby: string }) {

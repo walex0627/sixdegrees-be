@@ -7,6 +7,11 @@ import { firstValueFrom } from 'rxjs';
 export class GameService {
   constructor(private readonly httpService: HttpService) { }
 
+  // Helper para evitar Rate Limiting de TMDB con cadenas largas
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   //This validate if the actor is in the movie credits
   async verifyCredit(personID: string, movieID: string): Promise<Boolean> {
     
@@ -74,29 +79,39 @@ getRoastMessage(steps: number): string {
 //Validate if the movie is valid
 async validateFullChain(chain: { id: string, type: 'person' | 'movie' }[]): Promise<boolean> {
   // Una cadena mínima válida es: Actor -> Película -> Actor (3 nodos)
-  // Pero si el usuario conecta Actor -> Película (2 nodos) y esa película es el objetivo, también es válido.
-  if (chain.length < 2) return false; 
+  if (chain.length < 2) return false;
 
-  for (let i = 0; i < chain.length - 1; i++) {
-    const current = chain[i];
-    const next = chain[i + 1];
+  try {
+    for (let i = 0; i < chain.length - 1; i++) {
+      const current = chain[i];
+      const next = chain[i + 1];
 
-    // No pueden haber dos tipos seguidos (Actor -> Actor es error)
-    if (current.type === next.type) return false; 
+      // No pueden haber dos tipos seguidos (Actor -> Actor es error)
+      if (current.type === next.type) return false;
 
-    // Si es Persona -> Película
-    if (current.type === 'person' && next.type === 'movie') {
-      const isValid = await this.verifyCredit(current.id.toString(), next.id.toString());
-      if (!isValid) return false;
+      // Pausa entre llamadas para evitar Rate Limiting 429 de TMDB
+      // Solo aplicamos delay a partir del 3er par (cadenas largas > 4 nodos)
+      if (i >= 2) {
+        await this.delay(300);
+      }
+
+      // Si es Persona -> Película
+      if (current.type === 'person' && next.type === 'movie') {
+        const isValid = await this.verifyCredit(current.id.toString(), next.id.toString());
+        if (!isValid) return false;
+      }
+
+      // Si es Película -> Persona
+      if (current.type === 'movie' && next.type === 'person') {
+        const isValid = await this.verifyCredit(next.id.toString(), current.id.toString());
+        if (!isValid) return false;
+      }
     }
-    
-    // Si es Película -> Persona
-    if (current.type === 'movie' && next.type === 'person') {
-      const isValid = await this.verifyCredit(next.id.toString(), current.id.toString());
-      if (!isValid) return false;
-    }
+
+    return true;
+  } catch (error) {
+    console.error('Error crítico validando cadena completa:', error.message);
+    throw new Error('TMDB_VALIDATION_ERROR');
   }
-
-  return true;
 }
 }
