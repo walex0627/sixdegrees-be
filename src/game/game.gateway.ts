@@ -29,25 +29,26 @@ export class GameGateway {
   ) {
     const lobbyCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    // Guardamos la configuración y el creador
+    // Store lobby configuration and host information
     await this.redis.hset(`lobby:${lobbyCode}`, {
       status: 'waiting',
       startNode: JSON.stringify(data.startNode),
       targetNode: JSON.stringify(data.targetNode),
       hostUsername: data.username
     });
-    
-    await this.redis.expire(`lobby:${lobbyCode}`, 1800); 
 
-    // Identificamos al creador en el socket
+    // Set lobby TTL to 30 minutes
+    await this.redis.expire(`lobby:${lobbyCode}`, 1800);
+
+    // Attach the username to the socket instance and join the room
     (client as any).username = data.username;
     client.join(lobbyCode);
 
-    // Inicializamos al creador en las listas de Redis
+    // Register the host in the players and scores sorted sets
     await this.redis.sadd(`lobby:${lobbyCode}:players`, data.username);
     await this.redis.zadd(`lobby:${lobbyCode}:scores`, 0, data.username);
 
-    console.log(`Lobby creado: ${lobbyCode} por ${data.username}`);
+    console.log(`Lobby created: ${lobbyCode} by ${data.username}`);
     
     return { lobbyCode };
   }
@@ -60,26 +61,28 @@ export class GameGateway {
     const lobbyData = await this.redis.hgetall(`lobby:${data.code}`);
     
     if (lobbyData && lobbyData.status) {
+      // Attach the username to the socket instance and join the room
       (client as any).username = data.username;
       client.join(data.code);
 
+      // Register the new player in Redis (score defaults to 0)
       await this.redis.sadd(`lobby:${data.code}:players`, data.username);
       await this.redis.zadd(`lobby:${data.code}:scores`, 0, data.username);
 
-      // Obtener arreglo de jugadores actualizado
+      // Fetch the updated players array sorted by score (descending)
       const scores = await this.redis.zrevrange(`lobby:${data.code}:scores`, 0, -1, 'WITHSCORES');
       const players: { username: string; score: number }[] = [];
       for (let i = 0; i < scores.length; i += 2) {
         players.push({ username: scores[i], score: parseInt(scores[i+1]) });
       }
 
-      // Notificamos a toda la sala de la llegada del nuevo jugador con el array
+      // Broadcast the updated player list and host to all clients in the room
       this.server.to(data.code).emit('player_joined', {
         players,
         hostUsername: lobbyData.hostUsername
       });
 
-      console.log(`Jugador ${data.username} unido al lobby ${data.code}`);
+      console.log(`Player ${data.username} joined lobby ${data.code}`);
 
       return { 
         status: 'success', 
@@ -90,7 +93,7 @@ export class GameGateway {
         players
       };
     } else {
-      return { status: 'error', message: 'Lobby no encontrado' };
+      return { status: 'error', message: 'Lobby not found' };
     }
   }
 
@@ -98,7 +101,7 @@ export class GameGateway {
   async handleStartGame(@MessageBody() data: { lobby: string }) {
     await this.redis.hset(`lobby:${data.lobby}`, 'status', 'playing');
 
-    // Obtener el arreglo de jugadores y el host para el parche de seguridad del frontend
+    // Fetch the full player list and host to sync all clients at game start
     const lobbyData = await this.redis.hgetall(`lobby:${data.lobby}`);
     const scores = await this.redis.zrevrange(`lobby:${data.lobby}:scores`, 0, -1, 'WITHSCORES');
     const players: { username: string; score: number }[] = [];
@@ -110,7 +113,7 @@ export class GameGateway {
       players,
       hostUsername: lobbyData.hostUsername
     });
-    console.log(`Juego iniciado en lobby: ${data.lobby}`);
+    console.log(`Game started in lobby: ${data.lobby}`);
   }
 
   @SubscribeMessage('submit_chain')
@@ -121,35 +124,35 @@ export class GameGateway {
     const username = data.username || (client as any).username;
 
     try {
-      // 1. Validar la cadena
+      // Step 1: Validate the submitted chain against the TMDB API
       const isChainValid = await this.gameService.validateFullChain(data.chain);
 
-      // 2. Contar pasos (películas)
+      // Step 2: Count the number of movie nodes (each movie = 1 step)
       const steps = data.chain.filter((item) => item.type === 'movie').length;
 
       let resultMessage: string;
       let finalScore = 0;
 
-      // 3. LÓGICA DE EVALUACIÓN
+      // Step 3: Scoring logic based on chain validity and step count
       if (isChainValid) {
         if (steps <= 6) {
           resultMessage = this.gameService.getWinMessage(steps);
-          // Puntuación Pro: 1 paso = 250, 2-3 = 150, 4-6 = 100
+          // Pro scoring: 1 step = 250pts, 2–3 steps = 150pts, 4–6 steps = 100pts
           finalScore = steps === 1 ? 250 : (steps <= 3 ? 150 : 100);
         } else {
           resultMessage = this.gameService.getRoastMessage(steps);
           finalScore = 10;
         }
 
-        // 4. Guardar en Redis SOLO si es válida
+        // Step 4: Persist the score in Redis only for valid chains (incremental)
         await this.redis.zincrby(`lobby:${data.lobby}:scores`, finalScore, username);
 
       } else {
-        resultMessage = `¡Corte! El Director dice que ${data.chain[0]?.name || 'ese elemento'} no estuvo en esa producción. Revisa tus fuentes.`;
+        resultMessage = `Cut! The Director says ${data.chain[0]?.name || 'that element'} was not in that production. Check your sources.`;
         finalScore = 0;
       }
 
-      // 5. Obtener ranking actualizado y emitir el resultado
+      // Step 5: Fetch the updated ranking and broadcast round results to the entire lobby
       const scores = await this.redis.zrevrange(`lobby:${data.lobby}:scores`, 0, -1, 'WITHSCORES');
       const players: { username: string; score: number }[] = [];
       for (let i = 0; i < scores.length; i += 2) {
@@ -164,13 +167,13 @@ export class GameGateway {
       });
 
     } catch (error) {
-      console.error(`[submit_chain] Error inesperado para ${username}:`, error.message);
+      console.error(`[submit_chain] Unexpected error for user ${username}:`, error.message);
 
-      // SIEMPRE emitimos round_result aunque haya un error, para descongelar al cliente
+      // Always emit round_result on error to prevent the client from freezing
       this.server.to(data.lobby).emit('round_result', {
         username,
         score: 0,
-        message: `¡Corte técnico! Hubo un problema del servidor al validar tu cadena. Intenta con una cadena más corta.`,
+        message: `Technical cut! The server encountered an error validating your chain. Try a shorter chain.`,
         players: [],
         error: true,
       });
@@ -193,20 +196,20 @@ export class GameGateway {
   async handleUpdateMission(
     @MessageBody() data: { lobby_code: string, startNode: any, targetNode: any }
   ) {
-    // 1. Restaurar estatus de la sala a "waiting" (no jugando) y guardar los nuevos nodos
+    // Reset the lobby status to 'waiting' and persist the new mission nodes
     await this.redis.hset(`lobby:${data.lobby_code}`, {
       status: 'waiting',
       startNode: JSON.stringify(data.startNode),
       targetNode: JSON.stringify(data.targetNode)
     });
 
-    // 2. Emitir el nuevo evento a todos los clientes de esa sala
+    // Broadcast the new mission to all clients currently in the room
     this.server.to(data.lobby_code).emit('mission_updated', {
       startNode: data.startNode,
       targetNode: data.targetNode
     });
 
-    console.log(`Misión actualizada en lobby: ${data.lobby_code}`);
+    console.log(`Mission updated in lobby: ${data.lobby_code}`);
     return { status: 'success' };
   }
 }

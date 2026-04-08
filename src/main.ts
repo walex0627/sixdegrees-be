@@ -9,7 +9,7 @@ async function bootstrap() {
   // 1. Enable CORS (Cross-Origin Resource Sharing)
   // This allows your React app to communicate with the Backend
   app.enableCors({
-    origin: '*', // In production, replace with your frontend URL (e.g., https://cinegraph.vercel.app)
+    origin: '*', // In production, replace with your frontend URL (e.g., https://thesixdegrees.vercel.app)
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
