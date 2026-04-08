@@ -1,98 +1,90 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# The Six Degrees - Backend 🎬
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+This is the backend for **The Six Degrees**, a movie-themed social game where players connect actors and movies in a chain to reach a target. Built with **NestJS**, **WebSockets**, and **Redis**, it leverages the **TMDB API** for movie data validation.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🚀 Key Features
 
-## Description
+- **Real-time Multiplayer**: Powered by Socket.io for lobby management and instant game updates.
+- **Dynamic Contextual Search**: A guided search system that only allows valid connections based on the current node (e.g., if you pick an actor, you can only search for movies they've been in).
+- **Intelligent Chain Validation**: Validates user-submitted chains against TMDB credits with built-in rate-limiting protection.
+- **Live Ranking & Scoring**: Integrated scoring system with Redis-backed leaderboards that update in real-time.
+- **Host Authority**: Robust lobby management where the creator has exclusive rights to start games and update missions.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## 🛠️ Tech Stack
 
-## Project setup
+- **Framework**: [NestJS](https://nestjs.com/)
+- **Communication**: [Socket.io](https://socket.io/) (WebSockets)
+- **Database/Caching**: [Redis](https://redis.io/) (via ioredis)
+- **API Client**: [Axios](https://axios-http.com/)
+- **Language**: TypeScript
+- **External API**: [The Movie Database (TMDB)](https://www.themoviedb.org/documentation/api)
 
-```bash
-$ npm install
+## 📦 Project Structure
+
+```text
+src/
+├── game/
+│   ├── game.controller.ts  # REST Endpoints (Search & Connections)
+│   ├── game.gateway.ts     # WebSocket Events (Lobby, Game Flow, Results)
+│   ├── game.service.ts     # Core Logic (TMDB API, Validation, Scoring)
+│   └── game.module.ts      # NestJS Module Configuration
+├── main.ts                 # App entry point & CORS configuration
+└── app.module.ts           # Root module
 ```
 
-## Compile and run the project
+## 🌐 Live Demo
+You can play the game live at: **[https://thesixdegrees.vercel.app](https://thesixdegrees.vercel.app)**
 
-```bash
-# development
-$ npm run start
+## ⚙️ Environment Variables
+Create a `.env` file in the root directory:
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```env
+PORT=3000
+TMDB_API_KEY=your_tmdb_api_key
+REDIS_URL=redis://localhost:6379 # Or REDIS_PUBLIC_URL for production
 ```
 
-## Run tests
+## 📡 API & Socket Documentation
 
-```bash
-# unit tests
-$ npm run test
+### REST Endpoints
 
-# e2e tests
-$ npm run test:e2e
+#### `GET /api/game/search`
+Global search for movies or actors (used for setting up the game).
+- Params: `q` (query), `type` ('person' | 'movie')
 
-# test coverage
-$ npm run test:cov
-```
+#### `GET /api/game/connections`
+Context-aware search for the current game step.
+- Params: `contextId` (ID of last node), `contextType` ('person' | 'movie'), `q` (filter)
 
-## Deployment
+### WebSocket Events (Emitter/Listener)
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+- **`create_lobby`**: Initializes a new game room.
+- **`join_lobby`**: Adds a player and syncs the current host and node data.
+- **`start_game`**: Broadcasts the start event to all players in the room.
+- **`submit_chain`**: Submits a completed chain for validation and scoring.
+- **`update_mission`**: Allows the host to reset the mission for a new round without destroying the room.
+- **`round_result`**: Broadcasted when a player finishes, sending updated rankings to everyone.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## 🏃 Getting Started
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+1. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+2. **Run in development mode**:
+   ```bash
+   npm run start:dev
+   ```
 
-## Resources
+3. **Build for production**:
+   ```bash
+   npm run build
+   npm run start:prod
+   ```
 
-Check out a few resources that may come in handy when working with NestJS:
+## 🛡️ CORS
+The application is pre-configured to accept requests from the production frontend URL. You can update this in `src/main.ts`.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+---
+*Developed with ❤️ for movie buffs.*
