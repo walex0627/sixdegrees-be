@@ -50,6 +50,58 @@ export class GameService {
         : null
     }));
   }
+
+  // Devuelve peliculas donde ha participado una persona (para busqueda contextual)
+  async getMoviesByPerson(personId: string, query?: string): Promise<any[]> {
+    const TMDB_API_KEY = process.env.TMDB_API_KEY;
+    const url = `https://api.themoviedb.org/3/person/${personId}/movie_credits?api_key=${TMDB_API_KEY}`;
+    const { data } = await firstValueFrom(this.httpService.get(url));
+
+    // Combinar cast + directores del crew
+    const movies = [
+      ...data.cast,
+      ...data.crew.filter((c: any) => c.job === 'Director')
+    ];
+
+    // Deduplicar por ID
+    const unique = Array.from(new Map(movies.map((m: any) => [m.id, m])).values()) as any[];
+
+    // Filtrar por texto si se provee
+    const filtered = query
+      ? unique.filter((m: any) => m.title?.toLowerCase().includes(query.toLowerCase()))
+      : unique;
+
+    return filtered.slice(0, 10).map((m: any) => ({
+      id: m.id.toString(),
+      name: m.title,
+      type: 'movie',
+      image: m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : null
+    }));
+  }
+
+  // Devuelve el cast de una pelicula (para busqueda contextual)
+  async getPeopleByMovie(movieId: string, query?: string): Promise<any[]> {
+    const TMDB_API_KEY = process.env.TMDB_API_KEY;
+    const url = `https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDB_API_KEY}`;
+    const { data } = await firstValueFrom(this.httpService.get(url));
+
+    const people = [
+      ...data.cast,
+      ...data.crew.filter((c: any) => c.job === 'Director')
+    ];
+
+    const filtered = query
+      ? people.filter((p: any) => p.name?.toLowerCase().includes(query.toLowerCase()))
+      : people;
+
+    return filtered.slice(0, 10).map((p: any) => ({
+      id: p.id.toString(),
+      name: p.name,
+      type: 'person',
+      image: p.profile_path ? `https://image.tmdb.org/t/p/w200${p.profile_path}` : null
+    }));
+  }
+
 // Win message
 getWinMessage(steps: number): string {
   const winMessages = [
